@@ -15,6 +15,9 @@ jobs:
             - name: Checkout this repo
               uses: actions/checkout@v4
 
+            - name: Setup emsdk
+              uses: mymindstorm/setup-emsdk@v14
+
             - name: Install Dependencies
               run: |
                   sudo apt update
@@ -26,48 +29,32 @@ jobs:
                   cd cdda
                   git submodule update --init --recursive
 
-            - name: Set up Emscripten
-              run: |
-                  git clone https://github.com/emscripten-core/emsdk.git
-                  cd emsdk
-                  ./emsdk install latest
-                  ./emsdk activate latest
-
             - name: Build CDDA for Web
               run: |
-                  source emsdk/emsdk_env.sh
-                  embuilder build zlib
-                  embuilder build sdl2_image
-                  embuilder build sdl2_ttf
-
                   cd cdda
+                  make -j`nproc` NATIVE=emscripten BACKTRACE=0 TILES=1 TESTS=0 RUNTESTS=0 RELEASE=1 LINTJSON=0 \
+                    WARNINGS=" \
+                        -Wno-error -Wall -Wextra \
+                        -Wformat-signedness \
+                        -Wlogical-op \
+                        -Wmissing-declarations \
+                        -Wmissing-noreturn \
+                        -Wpedantic \
+                        -Wunused-macros" \
+                    cataclysm-tiles.js
 
-                  echo "int main() { return 0; }" | emcc -x c - -sUSE_SDL=2 -o dummy.js
-                  rm dummy.js dummy.wasm
-
-                  export SDL2_INCLUDE_DIR="$EMSDK/upstream/emscripten/cache/sysroot/include/SDL2"
-                  export SDL2_LIBRARY=SDL2
-
-                  make NATIVE=emscripten RELEASE=1 TILES=1 CURSES=0 SOUND=0 LOCALIZE=0 USE_HOME_DIR=0 USE_XDG_DIR=0 BACKTRACE=0 SOUND=0 LOCALIZE=0 LINTJSON=0 TESTS=0
-            - name: Prepare output for GitHub Pages
+            - name: Copy output to temp directory
               run: |
-                  mkdir -p site
-                  cp cdda/build/cataclysm-tiles.html site/index.html
-                  cp cdda/build/cataclysm-tiles.js site/
-                  cp cdda/build/cataclysm-tiles.wasm site/
+                  ls -lh .
+                  mkdir -p output
+                  cp cdda/cataclysm-tiles.js output/
+                  cp cdda/cataclysm-tiles.wasm output/
+                  cp cdda/cataclysm-tiles.data output/
 
-            - name: Upload GitHub Pages artifact
-              uses: actions/upload-artifact@v4
+            - name: Publish to data branch
+              uses: peaceiris/actions-gh-pages@v4
               with:
-                  path: ./site
-
-    deploy:
-        needs: build
-        runs-on: ubuntu-latest
-        permissions:
-            pages: write
-            id-token: write
-
-        steps:
-            - name: Deploy to GitHub Pages
-              uses: actions/deploy-pages@v4
+                  github_token: ${{ secrets.GITHUB_TOKEN }}
+                  publish_dir: ./output
+                  publish_branch: data
+                  force_orphan: true
